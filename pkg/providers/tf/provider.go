@@ -24,7 +24,7 @@ import (
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/providers/builtin/base"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/providers/tf/wrapper"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/varcontext"
-	"github.com/pivotal-cf/brokerapi"
+	"github.com/pivotal-cf/brokerapi/v7"
 )
 
 // NewTerraformProvider creates a new ServiceProvider backed by Terraform module definitions for provision and bind.
@@ -54,11 +54,11 @@ func (provider *terraformProvider) Provision(ctx context.Context, provisionConte
 	var tfID string
 	var err error
 
-	if provider.serviceDefinition.ProvisionSettings.IsTfImport(provisionContext) { 
+	if provider.serviceDefinition.ProvisionSettings.IsTfImport(provisionContext) {
 		tfID, err = provider.importCreate(ctx, provisionContext, provider.serviceDefinition.ProvisionSettings)
 		if err != nil {
 			return models.ServiceInstanceDetails{}, err
-		}	
+		}
 	} else {
 		tfID, err = provider.create(ctx, provisionContext, provider.serviceDefinition.ProvisionSettings)
 		if err != nil {
@@ -79,7 +79,7 @@ func (provider *terraformProvider) Update(ctx context.Context, provisionContext 
 	})
 
 	if provider.serviceDefinition.ProvisionSettings.IsTfImport(provisionContext) {
-		return models.ServiceInstanceDetails{}, fmt.Errorf("Cannot update to subsume plan\n\nFor OpsMan Tile users see documentation here: https://via.vmw.com/ENs4\n\nFor Open Source users deployed via 'cf push' see documentation here:  https://via.vmw.com/ENw4")
+		return models.ServiceInstanceDetails{}, fmt.Errorf("cannot update to subsume plan\n\nFor OpsMan Tile users see documentation here: https://via.vmw.com/ENs4\n\nFor Open Source users deployed via 'cf push' see documentation here:  https://via.vmw.com/ENw4")
 	}
 
 	tfId := provisionContext.GetString("tf_id")
@@ -87,7 +87,7 @@ func (provider *terraformProvider) Update(ctx context.Context, provisionContext 
 		return models.ServiceInstanceDetails{}, err
 	}
 
-	err :=  provider.jobRunner.Update(ctx, tfId, provisionContext.ToMap())
+	err := provider.jobRunner.Update(ctx, tfId, provisionContext.ToMap())
 
 	return models.ServiceInstanceDetails{
 		OperationId:   tfId,
@@ -120,16 +120,16 @@ func (provider *terraformProvider) importCreate(ctx context.Context, vars *varco
 
 	for _, importParameterMapping := range action.ImportParameterMappings {
 		parameterMappings = append(parameterMappings, wrapper.ParameterMapping{
-			TfVariable: importParameterMapping.TfVariable,
+			TfVariable:    importParameterMapping.TfVariable,
 			ParameterName: importParameterMapping.ParameterName,
 		})
 	}
 
 	for _, addParam := range action.ImportParametersToAdd {
 		addParams = append(addParams, wrapper.ParameterMapping{
-			TfVariable: addParam.TfVariable,
+			TfVariable:    addParam.TfVariable,
 			ParameterName: addParam.ParameterName,
-		})	
+		})
 	}
 
 	var importParams []ImportResource
@@ -146,7 +146,7 @@ func (provider *terraformProvider) importCreate(ctx context.Context, vars *varco
 			importFields = fmt.Sprintf("%s, %s", importFields, action.ImportVariables[i].Name)
 		}
 
-		return "", fmt.Errorf("Must provide values for all import parameters: %s", importFields)
+		return "", fmt.Errorf("must provide values for all import parameters: %s", importFields)
 	}
 
 	tfId := vars.GetString("tf_id")

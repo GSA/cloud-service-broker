@@ -24,8 +24,8 @@ import (
 	"sync"
 
 	"github.com/cloudfoundry-incubator/cloud-service-broker/utils"
-	multierror "github.com/hashicorp/go-multierror"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/hashicorp/go-multierror"
+	"gopkg.in/yaml.v3"
 )
 
 type Source func() (io.ReadCloser, error)
@@ -74,7 +74,7 @@ func FromBytes(b []byte) Source {
 	return FromReader(bytes.NewReader(b))
 }
 
-// FromBytes streams the given bytes as a buffer.
+// FromString streams the given string as a buffer.
 func FromString(s string) Source {
 	return FromBytes([]byte(s))
 }

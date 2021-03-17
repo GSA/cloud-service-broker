@@ -112,6 +112,18 @@ user-defined plans.
 		return client.Update(instanceId, serviceId, planId, json.RawMessage(parametersJson))
 	})
 
+	examplesCmd := &cobra.Command{
+		Use:   "examples",
+		Short: "Display available examples",
+		Long:  "Display available examples",
+		Run: func(cmd *cobra.Command, args []string) {
+			log.Printf("%s: %s\n\n", "example name", "service name")
+			for _, e := range server.GetExamplesFromServer() {
+				log.Printf("%s: %s\n", e.Name, e.ServiceName)
+			}
+		},
+	}
+
 	runExamplesCmd := &cobra.Command{
 		Use:   "run-examples",
 		Short: "Run all examples in the use command.",
@@ -125,21 +137,18 @@ user-defined plans.
 				log.Fatalf("Error creating client: %v", err)
 			}
 
-			if exampleName != "" && serviceName == "" {
+			switch {
+			case exampleName != "" && serviceName == "":
 				log.Fatalf("If an example name is specified, you must provide an accompanying service name.")
-			} else if fileName != "" {
-				if err := client.RunExamplesFromFile(apiClient, fileName, serviceName, exampleName); err != nil {
-					log.Fatalf("Error executing examples from file: %v", err)
-				}
-			} else if err := client.RunExamplesForService(server.GetExamplesFromServer(), apiClient, serviceName, exampleName, exampleJobCount); err != nil {
-				log.Fatalf("Error executing examples: %v", err)
+			case fileName != "":
+				client.RunExamplesFromFile(apiClient, fileName, serviceName, exampleName)
+			default:
+				client.RunExamplesForService(server.GetExamplesFromServer(), apiClient, serviceName, exampleName, exampleJobCount)
 			}
-
-			log.Println("Success")
 		},
 	}
 
-	clientCmd.AddCommand(clientCatalogCmd, provisionCmd, deprovisionCmd, bindCmd, unbindCmd, lastCmd, runExamplesCmd, updateCmd)
+	clientCmd.AddCommand(clientCatalogCmd, provisionCmd, deprovisionCmd, bindCmd, unbindCmd, lastCmd, runExamplesCmd, updateCmd, examplesCmd)
 
 	bindFlag := func(dest *string, name, description string, commands ...*cobra.Command) {
 		for _, sc := range commands {

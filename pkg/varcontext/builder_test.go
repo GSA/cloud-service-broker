@@ -197,17 +197,17 @@ func ExampleContextBuilder_BuildMap() {
 	m, _ := Builder().MergeEvalResult("a", "${1+1}", "string").BuildMap()
 	fmt.Printf("Map: %v\n", m)
 
-	//Output: Error: 1 error(s) occurred: couldn't compute the value for "a", template: "${assert(false, \"failure!\")}", assert: Assertion failed: failure!
+	//Output: Error: 1 error(s) occurred: couldn't compute the value for "a", template: "${assert(false, \"failure!\")}", assert: assertion failed: failure!
 	// Map: map[a:2]
 }
 
 func TestDefaultVariable_Validate(t *testing.T) {
 	cases := map[string]validation.ValidatableTest{
-		"empty": validation.ValidatableTest{
+		"empty": {
 			Object: &DefaultVariable{},
 			Expect: errors.New("missing field(s): default, name"),
 		},
-		"bad type": validation.ValidatableTest{
+		"bad type": {
 			Object: &DefaultVariable{
 				Name:    "my-name",
 				Default: 123,
@@ -215,7 +215,7 @@ func TestDefaultVariable_Validate(t *testing.T) {
 			},
 			Expect: errors.New("field must match '^(|object|boolean|array|number|string|integer)$': type"),
 		},
-		"good": validation.ValidatableTest{
+		"good": {
 			Object: &DefaultVariable{
 				Name:    "my-name",
 				Default: 123,

@@ -1,5 +1,5 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-
+[![test](https://github.com/cloudfoundry-incubator/cloud-service-broker/workflows/test/badge.svg?branch=master)](https://github.com/cloudfoundry-incubator/cloud-service-broker/actions?query=workflow%3Atest+branch%3Amaster)
 [![Go Report Card](https://goreportcard.com/badge/github.com/cloudfoundry-incubator/cloud-service-broker)](https://goreportcard.com/report/github.com/cloudfoundry-incubator/cloud-service-broker)
 
 # Cloud Service Broker
@@ -21,13 +21,9 @@ Some of the benefits over traditional, IaaS-provided, service brokers include:
 
 
 ## Public Roadmap
-For a list of currently "Core Broker" (IaaS agnostic) features, see our up-to-date roadmap on Trello here: https://trello.com/b/m873oYyJ/csb-core-broker-public-roadmap
+The previously mentioned Trello roadmap has been archived in favor of a new Roadmap, which will live in Github, is TBD. 
 
-Azure Roadmap: https://trello.com/b/IJKM3bcG/csb-azure-public-roadmap
-
-AWS Roadmap: https://trello.com/b/eBe25hzx/csb-aws-public-roadmap
-
-GCP Roadmap: https://trello.com/b/MNL1QzrQ/csb-gcp-public-roadmap
+For updates on this roadmap, please reach out on the #cloudservicebroker channel in the [Cloud Foundry Slack](https://slack.cloudfoundry.org/)! 
 
 ## Installation
 
@@ -39,6 +35,14 @@ This service broker can be installed as a CF application. See the instructions f
   * [Azure configuration examples](https://github.com/cloudfoundry-incubator/csb-brokerpak-azure/blob/main/docs/azure-example-configs.md)
 * [GCP](https://github.com/cloudfoundry-incubator/csb-brokerpak-gcp/blob/main/docs/gcp-installation.md)
 
+
+## CSB-Provided Brokerpaks 
+
+To examine, submit issues or pull requests to the Brokerpaks which have been created for the major public clouds (AWS, Azure, GCP) see the repos below:
+
+* [AWS Brokerpak](https://github.com/cloudfoundry-incubator/csb-brokerpak-aws)
+* [Azure Brokerpak](https://github.com/cloudfoundry-incubator/csb-brokerpak-azure)
+* [GCP Brokerpak](https://github.com/cloudfoundry-incubator/csb-brokerpak-gcp)
 
 ## Usage
 

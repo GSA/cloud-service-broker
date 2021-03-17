@@ -11,14 +11,12 @@ endif
 
 ifeq ($(USE_GO_CONTAINERS),)
 GO=go
-GOIMPORTS=goimports
+GOFMT=gofmt
 else
 UID:=$(shell id -u)
 DOCKER_OPTS=--rm -u $(UID) -v $(HOME):$(HOME) -e HOME -e USER=$(USER) -e USERNAME=$(USER) -w $(PWD)
 GO=docker run $(DOCKER_OPTS) -e GOARCH -e GOOS -e CGO_ENABLED golang:$(GO-VERSION) go
-GOTOOLS=docker run $(DOCKER_OPTS) jare/go-tools
-GOIMPORTS=$(GOTOOLS) goimports
-HAS_GO_IMPORTS=true
+GOFMT=docker run $(DOCKER_OPTS) -e GOARCH -e GOOS -e CGO_ENABLED golang:$(GO-VERSION) gofmt
 endif
 
 SRC = $(shell find . -name "*.go" | grep -v "_test\." )
@@ -29,20 +27,31 @@ LDFLAGS="-X github.com/cloudfoundry-incubator/cloud-service-broker/utils.Version
 
 .PHONY: deps-go-binary
 deps-go-binary:
+ifeq ($(SKIP_GO_VERSION_CHECK),)
 	echo "Expect: $(GO-VER)" && \
 		echo "Actual: $$($(GO) version)" && \
 	 	$(GO) version | grep $(GO-VER) > /dev/null
-
-HAS_GO_IMPORTS := $(shell command -v goimports;)
-
-deps-goimports: deps-go-binary
-ifndef HAS_GO_IMPORTS
-	go get -u golang.org/x/tools/cmd/goimports
 endif
 
+###### Help ###################################################################
+
+.DEFAULT_GOAL = help
+
+.PHONY: help
+
+help: ## list Makefile targets
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+
+###### Test ###################################################################
+
+.PHONY: test
+test: download lint test-units ## run lint and unit tests
+
 .PHONY: test-units
-test-units: deps-go-binary
+test-units: deps-go-binary ## run unit tests
 	$(GO) test -v ./... -tags=service_broker
+
+###### Build ##################################################################
 
 ./build/cloud-service-broker.linux: $(SRC)
 	CGO_ENABLED=0 GOARCH=amd64 GOOS=linux $(GO) build -o ./build/cloud-service-broker.linux -ldflags ${LDFLAGS}
@@ -51,10 +60,21 @@ test-units: deps-go-binary
 	GOARCH=amd64 GOOS=darwin $(GO) build -o ./build/cloud-service-broker.darwin -ldflags ${LDFLAGS}
 
 .PHONY: build
-build: deps-go-binary ./build/cloud-service-broker.linux ./build/cloud-service-broker.darwin
+build: deps-go-binary ./build/cloud-service-broker.linux ./build/cloud-service-broker.darwin ## build binary
+
+.PHONY: generate
+generate: ## generate test fakes
+	${GO} generate ./...
+	make format
+
+.PHONY: download
+download: ## download go module dependencies
+	${GO} mod download -x
+
+###### Package ################################################################
 
 .PHONY: package
-package: ./build/cloud-service-broker.$(OSFAMILY) ./tile.yml ./manifest.yml docs/customization.md
+package: ./build/cloud-service-broker.$(OSFAMILY) ./tile.yml ./manifest.yml docs/customization.md ## package binary
 
 ./tile.yml:
 	./build/cloud-service-broker.$(OSFAMILY) generate tile > ./tile.yml
@@ -65,22 +85,50 @@ package: ./build/cloud-service-broker.$(OSFAMILY) ./tile.yml ./manifest.yml docs
 docs/customization.md:
 	./build/cloud-service-broker.$(OSFAMILY) generate customization > docs/customization.md
 
+###### Clean ##################################################################
+
 .PHONY: clean
-clean: deps-go-binary
+clean: deps-go-binary ## clean up from previous builds
 	-$(GO) clean --modcache
 	-rm -rf ./build
 
-.PHONY: lint
-lint: deps-goimports
-	git ls-files | grep '.go$$' | xargs $(GOIMPORTS) -l -w
+###### Lint ###################################################################
 
-# image
+.PHONY: lint
+lint: checkformat checkimports vet staticcheck ## lint the source
+
+checkformat: ## Checks that the code is formatted correctly
+	@@if [ -n "$$(${GOFMT} -s -e -l -d .)" ]; then       \
+		echo "gofmt check failed: run 'make format'"; \
+		exit 1;                                       \
+	fi
+
+checkimports: ## Checks that imports are formatted correctly
+	@@if [ -n "$$(${GO} run golang.org/x/tools/cmd/goimports -l -d .)" ]; then \
+		echo "goimports check failed: run 'make format'";                      \
+		exit 1;                                                                \
+	fi
+
+vet: ## Runs go vet
+	${GO} vet ./...
+
+staticcheck: ## Runs staticcheck
+	${GO} run honnef.co/go/tools/cmd/staticcheck ./...
+
+###### Format #################################################################
+
+.PHONY: format
+format: ## format the source
+	${GOFMT} -s -e -l -w .
+	${GO} run golang.org/x/tools/cmd/goimports -l -w .
+
+###### Image ##################################################################
 
 .PHONY: build-image
-build-image: Dockerfile
+build-image: Dockerfile ## build a Docker image
 	docker build --tag csb .
 
-# env vars checks
+###### Env Var Checks #########################################################
 
 .PHONY: security-user-name
 security-user-name:
@@ -112,3 +160,4 @@ ifndef DB_PASSWORD
 	$(error variable DB_PASSWORD not defined)
 endif
 
+###### End ####################################################################

@@ -67,12 +67,7 @@ type ToggleSet struct {
 // Toggles returns a list of all registered toggles sorted lexicographically by
 // their property name.
 func (set *ToggleSet) Toggles() []Toggle {
-	var copy []Toggle
-
-	for _, tgl := range set.toggles {
-		copy = append(copy, tgl)
-	}
-
+	copy := append([]Toggle{}, set.toggles...)
 	sort.Slice(copy, func(i, j int) bool { return copy[i].Name < copy[j].Name })
 	return copy
 }
@@ -93,7 +88,7 @@ func (set *ToggleSet) Toggle(name string, value bool, description string) Toggle
 	return toggle
 }
 
-// NewFlagSet returns a new, empty toggle set with the specified property prefix.
+// NewToggleSet returns a new, empty toggle set with the specified property prefix.
 // The property prefix will be prepended to any toggles exactly as-is. You MUST
 // specify a trailing period if you want your properties to be namespaced.
 func NewToggleSet(propertyPrefix string) *ToggleSet {

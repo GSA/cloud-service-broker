@@ -19,10 +19,10 @@ import (
 
 	"github.com/cloudfoundry-incubator/cloud-service-broker/db_service/models"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/varcontext"
-	"github.com/pivotal-cf/brokerapi"
+	"github.com/pivotal-cf/brokerapi/v7"
 )
 
-//go:generate counterfeiter . ServiceProvider
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . ServiceProvider
 
 // ServiceProvider performs the actual provisoning/deprovisioning part of a service broker request.
 // The broker will handle storing state and validating inputs while a ServiceProvider changes GCP to match the desired state.

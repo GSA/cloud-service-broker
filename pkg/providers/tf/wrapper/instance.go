@@ -14,9 +14,10 @@
 
 package wrapper
 
-import "encoding/json"
-
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // ModuleInstance represents the configuration of a single instance of a module.
 type ModuleInstance struct {
@@ -37,7 +38,7 @@ func (instance *ModuleInstance) MarshalDefinition(outputs []string) (json.RawMes
 
 	outputMap := make(map[string]interface{})
 	for _, variable := range outputs {
-		outputMap[variable] = map[string]string{ "value": fmt.Sprintf("${module.%s.%s}", instance.InstanceName, variable) }
+		outputMap[variable] = map[string]string{"value": fmt.Sprintf("${module.%s.%s}", instance.InstanceName, variable)}
 	}
 
 	defn := map[string]interface{}{

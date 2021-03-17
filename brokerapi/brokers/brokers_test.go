@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"testing"
 
+	"code.cloudfoundry.org/lager"
 	. "github.com/cloudfoundry-incubator/cloud-service-broker/brokerapi/brokers"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/db_service"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/db_service/models"
@@ -31,15 +32,11 @@ import (
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/credstore/credstorefakes"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/providers/builtin"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/providers/builtin/base"
-	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/providers/builtin/storage"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/varcontext"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/utils"
-	"github.com/pivotal-cf/brokerapi"
-	"google.golang.org/api/googleapi"
-
-	"code.cloudfoundry.org/lager"
-
 	"github.com/jinzhu/gorm"
+	"github.com/pborman/uuid"
+	"github.com/pivotal-cf/brokerapi/v7"
 )
 
 // InstanceState holds the lifecycle state of a provisioned service instance.
@@ -113,11 +110,26 @@ func (s *serviceStub) UpdateDetails() brokerapi.UpdateDetails {
 	}
 }
 
-
 // fakeService creates a ServiceDefinition with a mock ServiceProvider and
 // references to some important properties.
 func fakeService(t *testing.T, isAsync bool) *serviceStub {
-	defn := storage.ServiceDefinition()
+	defn := &broker.ServiceDefinition{
+		Id:   uuid.New(),
+		Name: "fake-service-name",
+		Plans: []broker.ServicePlan{
+			{
+				ServicePlan: brokerapi.ServicePlan{
+					ID:   "fake-plan-id",
+					Name: "fake-plan-name",
+				},
+			},
+		},
+		ProvisionComputedVariables: []varcontext.DefaultVariable{
+			{Name: "labels", Default: "${json.marshal(request.default_labels)}", Overwrite: true},
+			{Name: "originatingIdentity", Default: "${json.marshal(request.x_broker_api_originating_identity)}", Overwrite: true},
+		},
+		BindComputedVariables: []varcontext.DefaultVariable{{Name: "originatingIdentity", Default: "${json.marshal(request.x_broker_api_originating_identity)}", Overwrite: true}},
+	}
 	svc, err := defn.CatalogEntry()
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +180,7 @@ func newStubbedBroker(t *testing.T, registry broker.BrokerRegistry, cs credstore
 	}
 
 	config := &BrokerConfig{
-		Registry: registry,
+		Registry:  registry,
 		Credstore: cs,
 	}
 
@@ -220,7 +232,7 @@ type BrokerEndpointTestCase struct {
 
 	// Check is used to validate the state of the world and is where you should
 	// put your test cases.
-	Check func(t *testing.T, broker *ServiceBroker, stub *serviceStub)
+	Check     func(t *testing.T, broker *ServiceBroker, stub *serviceStub)
 	Credstore credstore.CredStore
 }
 
@@ -273,7 +285,7 @@ func initService(t *testing.T, state InstanceState, broker *ServiceBroker, stub 
 	}
 }
 
-func TestGCPServiceBroker_Services(t *testing.T) {
+func TestServiceBroker_Services(t *testing.T) {
 	registry := builtin.BuiltinBrokerRegistry()
 	broker, closer := newStubbedBroker(t, registry, nil)
 	defer closer()
@@ -283,13 +295,27 @@ func TestGCPServiceBroker_Services(t *testing.T) {
 	assertEqual(t, "service count should be the same", len(registry), len(services))
 }
 
-func TestGCPServiceBroker_Provision(t *testing.T) {
+func TestServiceBroker_Provision(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"good-request": {
 			ServiceState: StateProvisioned,
 			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
 
 				assertEqual(t, "provision calls should match", 1, stub.Provider.ProvisionCallCount())
+			},
+		},
+		"originating-header": {
+			AsyncService: true,
+			ServiceState: StateNone,
+			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
+				header := "cloudfoundry eyANCiAgInVzZXJfaWQiOiAiNjgzZWE3NDgtMzA5Mi00ZmY0LWI2NTYtMzljYWNjNGQ1MzYwIg0KfQ=="
+				newContext := context.WithValue(context.Background(), "originatingIdentity", header)
+				broker.Provision(newContext, fakeInstanceId, stub.ProvisionDetails(), true)
+				assertEqual(t, "provision calls should match", 1, stub.Provider.ProvisionCallCount())
+				_, actualVarContext := stub.Provider.ProvisionArgsForCall(0)
+				expectedOriginatingIdentityMap := `{"platform":"cloudfoundry","value":{"user_id":"683ea748-3092-4ff4-b656-39cacc4d5360"}}`
+
+				assertEqual(t, "originatingIdentity should match", expectedOriginatingIdentityMap, actualVarContext.GetString("originatingIdentity"))
 			},
 		},
 		"duplicate-request": {
@@ -314,7 +340,7 @@ func TestGCPServiceBroker_Provision(t *testing.T) {
 				req := stub.ProvisionDetails()
 				req.ServiceID = "bad-service-id"
 				_, err := broker.Provision(context.Background(), fakeInstanceId, req, true)
-				assertEqual(t, "errors should match", errors.New("Unknown service ID: \"bad-service-id\""), err)
+				assertEqual(t, "errors should match", errors.New(`unknown service ID: "bad-service-id"`), err)
 			},
 		},
 		"unknown-plan-id": {
@@ -323,7 +349,7 @@ func TestGCPServiceBroker_Provision(t *testing.T) {
 				req := stub.ProvisionDetails()
 				req.PlanID = "bad-plan-id"
 				_, err := broker.Provision(context.Background(), fakeInstanceId, req, true)
-				assertEqual(t, "errors should match", errors.New("Plan ID \"bad-plan-id\" could not be found"), err)
+				assertEqual(t, "errors should match", errors.New(`plan ID "bad-plan-id" could not be found`), err)
 			},
 		},
 		"bad-request-json": {
@@ -340,7 +366,7 @@ func TestGCPServiceBroker_Provision(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_Deprovision(t *testing.T) {
+func TestServiceBroker_Deprovision(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"good-request": {
 			ServiceState: StateProvisioned,
@@ -349,6 +375,22 @@ func TestGCPServiceBroker_Deprovision(t *testing.T) {
 				failIfErr(t, "deprovisioning", err)
 
 				assertEqual(t, "deprovision calls should match", 1, stub.Provider.DeprovisionCallCount())
+			},
+		},
+		"originating-header": {
+			AsyncService: true,
+			ServiceState: StateProvisioned,
+			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
+				header := "cloudfoundry eyANCiAgInVzZXJfaWQiOiAiNjgzZWE3NDgtMzA5Mi00ZmY0LWI2NTYtMzljYWNjNGQ1MzYwIg0KfQ=="
+				newContext := context.WithValue(context.Background(), "originatingIdentity", header)
+				_, err := broker.Deprovision(newContext, fakeInstanceId, stub.DeprovisionDetails(), true)
+				failIfErr(t, "deprovisioning", err)
+
+				assertEqual(t, "deprovision calls should match", 1, stub.Provider.DeprovisionCallCount())
+				_, _, _, actualVarContext := stub.Provider.DeprovisionArgsForCall(0)
+				expectedOriginatingIdentityMap := `{"platform":"cloudfoundry","value":{"user_id":"683ea748-3092-4ff4-b656-39cacc4d5360"}}`
+
+				assertEqual(t, "originatingIdentity should match", expectedOriginatingIdentityMap, actualVarContext.GetString("originatingIdentity"))
 			},
 		},
 		"duplicate-deprovision": {
@@ -407,7 +449,7 @@ func TestGCPServiceBroker_Deprovision(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_Bind(t *testing.T) {
+func TestServiceBroker_Bind(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"good-request": {
 			ServiceState: StateBound,
@@ -427,6 +469,19 @@ func TestGCPServiceBroker_Bind(t *testing.T) {
 			},
 			Credstore: &credstorefakes.FakeCredStore{},
 		},
+		"originating-header": {
+			ServiceState: StateProvisioned,
+			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
+				header := "cloudfoundry eyANCiAgInVzZXJfaWQiOiAiNjgzZWE3NDgtMzA5Mi00ZmY0LWI2NTYtMzljYWNjNGQ1MzYwIg0KfQ=="
+				newContext := context.WithValue(context.Background(), "originatingIdentity", header)
+				broker.Bind(newContext, fakeInstanceId, fakeBindingId, stub.BindDetails(), true)
+				assertEqual(t, "bind calls should match", 1, stub.Provider.BindCallCount())
+				_, actualVarContext := stub.Provider.BindArgsForCall(0)
+				expectedOriginatingIdentityMap := `{"platform":"cloudfoundry","value":{"user_id":"683ea748-3092-4ff4-b656-39cacc4d5360"}}`
+
+				assertEqual(t, "originatingIdentity should match", expectedOriginatingIdentityMap, actualVarContext.GetString("originatingIdentity"))
+			},
+		},
 		"duplicate-request": {
 			ServiceState: StateBound,
 			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
@@ -438,11 +493,12 @@ func TestGCPServiceBroker_Bind(t *testing.T) {
 			ServiceState: StateProvisioned,
 			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
 				req := stub.BindDetails()
-				req.RawParameters = json.RawMessage(`{"role":"project.admin"}`)
+				stub.Provider.BindStub = func(ctx context.Context, vc *varcontext.VarContext) (map[string]interface{}, error) {
+					return nil, errors.New("fake error")
+				}
 
-				expectedErr := "1 error(s) occurred: role: role must be one of the following: \"storage.objectAdmin\", \"storage.objectCreator\", \"storage.objectViewer\""
 				_, err := broker.Bind(context.Background(), fakeInstanceId, "bad-bind-call", req, true)
-				assertEqual(t, "errors should match", expectedErr, err.Error())
+				assertEqual(t, "errors should match", "fake error", err.Error())
 			},
 		},
 		"bad-request-json": {
@@ -473,18 +529,18 @@ func TestGCPServiceBroker_Bind(t *testing.T) {
 				failIfErr(t, "binding", err)
 				credMap, ok := bindResult.Credentials.(map[string]interface{})
 				assertTrue(t, "bind result credentials should be a map", ok)
-				assertTrue(t, "value foo missing", credMap["foo"] == nil)	
-				assertTrue(t, "cred-hub ref exists", credMap["credhub-ref"] != nil)	
-				assertEqual(t, "cred-hub ref has correct value", "/c/csb/google-storage/override-params/secrets-and-services", credMap["credhub-ref"].(string))		
+				assertTrue(t, "value foo missing", credMap["foo"] == nil)
+				assertTrue(t, "cred-hub ref exists", credMap["credhub-ref"] != nil)
+				assertEqual(t, "cred-hub ref has correct value", "/c/csb/fake-service-name/override-params/secrets-and-services", credMap["credhub-ref"].(string))
 			},
 			Credstore: &credstorefakes.FakeCredStore{},
-		},	
+		},
 	}
 
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_Unbind(t *testing.T) {
+func TestServiceBroker_Unbind(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"good-request": {
 			ServiceState: StateBound,
@@ -504,6 +560,19 @@ func TestGCPServiceBroker_Unbind(t *testing.T) {
 			},
 			Credstore: &credstorefakes.FakeCredStore{},
 		},
+		"originating-header": {
+			ServiceState: StateBound,
+			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
+				header := "cloudfoundry eyANCiAgInVzZXJfaWQiOiAiNjgzZWE3NDgtMzA5Mi00ZmY0LWI2NTYtMzljYWNjNGQ1MzYwIg0KfQ=="
+				newContext := context.WithValue(context.Background(), "originatingIdentity", header)
+				broker.Unbind(newContext, fakeInstanceId, fakeBindingId, stub.UnbindDetails(), true)
+				assertEqual(t, "unbind calls should match", 1, stub.Provider.UnbindCallCount())
+				_, _, _, actualVarContext := stub.Provider.UnbindArgsForCall(0)
+				expectedOriginatingIdentityMap := `{"platform":"cloudfoundry","value":{"user_id":"683ea748-3092-4ff4-b656-39cacc4d5360"}}`
+
+				assertEqual(t, "originatingIdentity should match", expectedOriginatingIdentityMap, actualVarContext.GetString("originatingIdentity"))
+			},
+		},
 		"multiple-unbinds": {
 			ServiceState: StateUnbound,
 			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
@@ -516,7 +585,7 @@ func TestGCPServiceBroker_Unbind(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_LastOperation(t *testing.T) {
+func TestServiceBroker_LastOperation(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"missing-instance": {
 			ServiceState: StateProvisioned,
@@ -540,17 +609,6 @@ func TestGCPServiceBroker_LastOperation(t *testing.T) {
 				failIfErr(t, "shouldn't be called on async service", err)
 
 				assertEqual(t, "PollInstanceCallCount should match", 1, stub.Provider.PollInstanceCallCount())
-			},
-		},
-		"poll-returns-retryable-error": {
-			AsyncService: true,
-			ServiceState: StateProvisioned,
-			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
-				stub.Provider.PollInstanceReturns(false, "", &googleapi.Error{Code: 503})
-				status, err := broker.LastOperation(context.Background(), fakeInstanceId, brokerapi.PollDetails{OperationData: "operationtoken"})
-				failIfErr(t, "checking last operation", err)
-				assertEqual(t, "retryable errors should result in in-progress state", brokerapi.InProgress, status.State)
-				assertEqual(t, "description should be error string", "googleapi: got HTTP response code 503 with body: ", status.Description)
 			},
 		},
 		"poll-returns-failure": {
@@ -590,7 +648,7 @@ func TestGCPServiceBroker_LastOperation(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_GetBinding(t *testing.T) {
+func TestServiceBroker_GetBinding(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"called-on-bound": {
 			ServiceState: StateBound,
@@ -605,7 +663,7 @@ func TestGCPServiceBroker_GetBinding(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_GetInstance(t *testing.T) {
+func TestServiceBroker_GetInstance(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"called-while-provisioned": {
 			ServiceState: StateProvisioned,
@@ -620,7 +678,7 @@ func TestGCPServiceBroker_GetInstance(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_LastBindingOperation(t *testing.T) {
+func TestServiceBroker_LastBindingOperation(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"called-while-bound": {
 			ServiceState: StateProvisioned,
@@ -636,7 +694,7 @@ func TestGCPServiceBroker_LastBindingOperation(t *testing.T) {
 	cases.Run(t)
 }
 
-func TestGCPServiceBroker_Update(t *testing.T) {
+func TestServiceBroker_Update(t *testing.T) {
 	cases := BrokerEndpointTestSuite{
 		"good-request": {
 			ServiceState: StateProvisioned,
@@ -647,6 +705,19 @@ func TestGCPServiceBroker_Update(t *testing.T) {
 				failIfErr(t, "update", err)
 			},
 		},
+		"originating-header": {
+			ServiceState: StateProvisioned,
+			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
+				header := "cloudfoundry eyANCiAgInVzZXJfaWQiOiAiNjgzZWE3NDgtMzA5Mi00ZmY0LWI2NTYtMzljYWNjNGQ1MzYwIg0KfQ=="
+				newContext := context.WithValue(context.Background(), "originatingIdentity", header)
+				broker.Update(newContext, fakeInstanceId, stub.UpdateDetails(), true)
+				assertEqual(t, "update calls should match", 1, stub.Provider.UpdateCallCount())
+				_, actualVarContext := stub.Provider.UpdateArgsForCall(0)
+				expectedOriginatingIdentityMap := `{"platform":"cloudfoundry","value":{"user_id":"683ea748-3092-4ff4-b656-39cacc4d5360"}}`
+
+				assertEqual(t, "originatingIdentity should match", expectedOriginatingIdentityMap, actualVarContext.GetString("originatingIdentity"))
+			},
+		},
 		"missing-instance": {
 			ServiceState: StateProvisioned,
 			AsyncService: true,
@@ -655,7 +726,7 @@ func TestGCPServiceBroker_Update(t *testing.T) {
 
 				assertEqual(t, "expect update error to be instance does not exist", brokerapi.ErrInstanceDoesNotExist, err)
 			},
-		},		
+		},
 		"requires-async": {
 			AsyncService: true,
 			ServiceState: StateProvisioned,
@@ -680,13 +751,16 @@ func TestGCPServiceBroker_Update(t *testing.T) {
 				_, err := broker.Update(context.Background(), fakeInstanceId, req, true)
 				assertEqual(t, "errors should match", ErrInvalidUserInput, err)
 			},
-		},		
+		},
 		"attempt-to-update-non-updatable-parameter": {
 			AsyncService: true,
 			ServiceState: StateProvisioned,
 			Check: func(t *testing.T, broker *ServiceBroker, stub *serviceStub) {
 				req := stub.UpdateDetails()
-				req.RawParameters = json.RawMessage(`{"location":"new-location"}`)
+				stub.Provider.UpdateStub = func(ctx context.Context, varContext *varcontext.VarContext) (models.ServiceInstanceDetails, error) {
+					return models.ServiceInstanceDetails{}, ErrNonUpdatableParameter
+				}
+
 				_, err := broker.Update(context.Background(), fakeInstanceId, req, true)
 				assertEqual(t, "errors should match", ErrNonUpdatableParameter, err)
 			},

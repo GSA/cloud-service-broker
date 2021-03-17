@@ -20,94 +20,115 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/pivotal-cf/brokerapi"
-
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/broker"
+	"github.com/pborman/uuid"
+	"github.com/pivotal-cf/brokerapi/v7"
 )
 
 // RunExamplesForService runs all the examples for a given service name against
 // the service broker pointed to by client. All examples in the registry get run
 // if serviceName is blank. If exampleName is non-blank then only the example
 // with the given name is run.
-func RunExamplesForService(allExamples []CompleteServiceExample, client *Client, serviceName, exampleName string, jobCount int) error {
-
-	rand.Seed(time.Now().UTC().UnixNano())
-
-	examples := make(chan CompleteServiceExample)
-	errors := make(chan error)
-	wg := &sync.WaitGroup{}
-
-	go func() {
-		defer close(examples)
-		for _, completeServiceExample := range FilterMatchingServiceExamples(allExamples, serviceName, exampleName) {
-			examples <- completeServiceExample
-		}
-	}()
-
-	for i := 0; i < jobCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for example := range examples {
-				if err := RunExample(client, example); err != nil {
-					errors <- err
-				}
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(errors)
-	}()
-
-	var err error
-	for err = range errors {
-	}
-
-	return err
+func RunExamplesForService(allExamples []CompleteServiceExample, client *Client, serviceName, exampleName string, jobCount int) {
+	runExamples(jobCount, client, FilterMatchingServiceExamples(allExamples, serviceName, exampleName))
 }
 
 // RunExamplesFromFile reads a json-encoded list of CompleteServiceExamples.
 // All examples in the list get run if serviceName is blank. If exampleName
 // is non-blank then only the example with the given name is run.
-func RunExamplesFromFile(client *Client, fileName, serviceName, exampleName string) error {
-
-	rand.Seed(time.Now().UTC().UnixNano())
-
-	jsonFile, err := os.Open(fileName)
-
+func RunExamplesFromFile(client *Client, fileName, serviceName, exampleName string) {
+	// ioutil is deprecated in Go 1.16, but the replacement os.ReadFile is not available in Go 1.14
+	data, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		log.Fatalf("Error opening file: %v", err)
 	}
 
-	defer jsonFile.Close()
-
 	var allExamples []CompleteServiceExample
+	json.Unmarshal(data, &allExamples)
 
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-	json.Unmarshal(byteValue, &allExamples)
+	runExamples(1, client, FilterMatchingServiceExamples(allExamples, serviceName, exampleName))
+}
 
-	for _, completeServiceExample := range FilterMatchingServiceExamples(allExamples, serviceName, exampleName) {
-		if err := RunExample(client, completeServiceExample); err != nil {
-			return err
-		}
+func runExamples(workers int, client *Client, examples []CompleteServiceExample) {
+	type result struct {
+		id, name, service string
+		duration          time.Duration
+		err               error
+	}
+	var results []result
+	var resultsLock sync.Mutex
+	addResult := func(r result) {
+		resultsLock.Lock()
+		defer resultsLock.Unlock()
+		results = append(results, r)
 	}
 
-	return nil
+	type work struct {
+		id      string
+		example CompleteServiceExample
+	}
+	queue := make(chan work)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			for w := range queue {
+				start := time.Now()
+				err := runExample(client, w.id, w.example)
+				addResult(result{
+					id:       w.id,
+					name:     w.example.Name,
+					service:  w.example.ServiceName,
+					duration: time.Since(start),
+					err:      err,
+				})
+			}
+			wg.Done()
+		}()
+	}
 
+	for i, e := range examples {
+		queue <- work{
+			id:      fmt.Sprintf("%03d", i),
+			example: e,
+		}
+	}
+	close(queue)
+	wg.Wait()
+
+	failed := 0
+	log.Println()
+	log.Println("RESULTS:")
+	log.Println()
+	log.Println("id | name | service | duration | result")
+	log.Println("-- | ---- | ------- | -------- | ------")
+	for _, r := range results {
+		switch r.err {
+		case nil:
+			log.Printf("%s | %s | %s | %s | PASS\n", r.id, r.name, r.service, r.duration)
+		default:
+			failed++
+			log.Printf("%s | %s | %s | %s | FAILED %s\n", r.id, r.name, r.service, r.duration, r.err)
+		}
+	}
+	log.Println()
+
+	switch failed {
+	case 0:
+		log.Println("Success")
+	default:
+		log.Fatalf("FAILED %d examples", failed)
+	}
 }
 
 type CompleteServiceExample struct {
-	broker.ServiceExample `json: ",inline"`
-	ServiceName           string                 `json: "service_name"`
-	ServiceId             string                 `json: "service_id"`
-	ExpectedOutput        map[string]interface{} `json: "expected_output"`
+	broker.ServiceExample `json:",inline"`
+	ServiceName           string                 `json:"service_name"`
+	ServiceId             string                 `json:"service_id"`
+	ExpectedOutput        map[string]interface{} `json:"expected_output"`
 }
 
 func GetExamplesForAService(service *broker.ServiceDefinition) ([]CompleteServiceExample, error) {
@@ -134,7 +155,7 @@ func GetExamplesForAService(service *broker.ServiceDefinition) ([]CompleteServic
 	return examples, nil
 }
 
-// Do not run example if:
+// FilterMatchingServiceExamples should not be run example if:
 // 1. The service name is specified and does not match the current example's ServiceName
 // 2. The service name is specified and matches the current example's ServiceName, and the example name is specified and does not match the current example's ExampleName
 func FilterMatchingServiceExamples(allExamples []CompleteServiceExample, serviceName, exampleName string) []CompleteServiceExample {
@@ -154,24 +175,24 @@ func FilterMatchingServiceExamples(allExamples []CompleteServiceExample, service
 
 // RunExample runs a single example against the given service on the broker
 // pointed to by client.
-func RunExample(client *Client, serviceExample CompleteServiceExample) error {
-
-	executor, err := newExampleExecutor(client, serviceExample)
+func runExample(client *Client, id string, serviceExample CompleteServiceExample) error {
+	logger := newExampleLogger(id)
+	executor, err := newExampleExecutor(logger, id, client, serviceExample)
 	if err != nil {
 		return err
 	}
 
-	executor.LogTestInfo()
+	executor.LogTestInfo(logger)
 
 	// Cleanup the test if it fails partway through
 	defer func() {
-		log.Println("Cleaning up the environment")
+		logger.Println("Cleaning up the environment")
 		executor.Unbind()
 		executor.Deprovision()
 	}()
 
 	if err := executor.Provision(); err != nil {
-		log.Printf("Failed to provision %v: %v", serviceExample.ServiceName, err)
+		logger.Printf("Failed to provision %v: %v", serviceExample.ServiceName, err)
 		return err
 	}
 
@@ -215,7 +236,7 @@ func RunExample(client *Client, serviceExample CompleteServiceExample) error {
 
 func retry(timeout, period time.Duration, function func() (tryAgain bool, err error)) error {
 	to := time.After(timeout)
-	tick := time.Tick(period)
+	tick := time.NewTicker(period).C
 
 	if tryAgain, err := function(); !tryAgain {
 		return err
@@ -225,7 +246,7 @@ func retry(timeout, period time.Duration, function func() (tryAgain bool, err er
 	for {
 		select {
 		case <-to:
-			return errors.New("Timeout while waiting for result")
+			return errors.New("timeout while waiting for result")
 		case <-tick:
 			tryAgain, err := function()
 
@@ -236,40 +257,7 @@ func retry(timeout, period time.Duration, function func() (tryAgain bool, err er
 	}
 }
 
-func pollUntilFinished(client *Client, instanceId string) error {
-	return retry(45*time.Minute, 30*time.Second, func() (bool, error) {
-		log.Println("Polling for async job")
-
-		resp := client.LastOperation(instanceId)
-		if resp.InError() {
-			return false, resp.Error
-		}
-
-		if resp.StatusCode != 200 {
-			log.Printf("Bad status code %d, needed 200", resp.StatusCode)
-			return false, fmt.Errorf("Broker responded with statuscode %v", resp.StatusCode)
-		}
-
-		var responseBody map[string]string
-		err := json.Unmarshal(resp.ResponseBody, &responseBody)
-		if err != nil {
-			return false, err
-		}
-
-		state := responseBody["state"]
-		eq := state == string(brokerapi.Succeeded)
-
-		if state == string(brokerapi.Failed) {
-			log.Printf("Last operation for %q was %q: %s\n", instanceId, state, responseBody["description"])
-			return false, fmt.Errorf(responseBody["description"])
-		}
-
-		log.Printf("Last operation for %q was %q\n", instanceId, state)
-		return !eq, nil
-	})
-}
-
-func newExampleExecutor(client *Client, serviceExample CompleteServiceExample) (*exampleExecutor, error) {
+func newExampleExecutor(logger *exampleLogger, id string, client *Client, serviceExample CompleteServiceExample) (*exampleExecutor, error) {
 	provisionParams, err := json.Marshal(serviceExample.ServiceExample.ProvisionParams)
 	if err != nil {
 		return nil, err
@@ -280,18 +268,17 @@ func newExampleExecutor(client *Client, serviceExample CompleteServiceExample) (
 		return nil, err
 	}
 
-	testid := rand.Uint32()
-
 	return &exampleExecutor{
 		Name:       fmt.Sprintf("%s/%s", serviceExample.ServiceName, serviceExample.ServiceExample.Name),
 		ServiceId:  serviceExample.ServiceId,
 		PlanId:     serviceExample.ServiceExample.PlanId,
-		InstanceId: fmt.Sprintf("ex%d-%s", testid, os.ExpandEnv("${USER}")),
-		BindingId:  fmt.Sprintf("ex%d", testid),
+		InstanceId: uuid.New(),
+		BindingId:  uuid.New(),
 
 		ProvisionParams: provisionParams,
 		BindParams:      bindParams,
 
+		logger: logger,
 		client: client,
 	}, nil
 }
@@ -307,6 +294,7 @@ type exampleExecutor struct {
 	ProvisionParams json.RawMessage
 	BindParams      json.RawMessage
 
+	logger *exampleLogger
 	client *Client
 }
 
@@ -316,11 +304,11 @@ type exampleExecutor struct {
 // If the response is an async result, Provision will attempt to wait until
 // the Provision is complete.
 func (ee *exampleExecutor) Provision() error {
-	log.Printf("Provisioning %s\n", ee.Name)
+	ee.logger.Printf("Provisioning %s\n", ee.Name)
 
 	resp := ee.client.Provision(ee.InstanceId, ee.ServiceId, ee.PlanId, ee.ProvisionParams)
 
-	log.Println(resp.String())
+	ee.logger.Println(resp.String())
 	if resp.InError() {
 		return resp.Error
 	}
@@ -331,20 +319,49 @@ func (ee *exampleExecutor) Provision() error {
 	case 202:
 		return ee.pollUntilFinished()
 	default:
-		return fmt.Errorf("Unexpected response code %d", resp.StatusCode)
+		return fmt.Errorf("unexpected response code %d", resp.StatusCode)
 	}
 }
 
 func (ee *exampleExecutor) pollUntilFinished() error {
-	return pollUntilFinished(ee.client, ee.InstanceId)
+	return retry(45*time.Minute, 30*time.Second, func() (bool, error) {
+		ee.logger.Println("Polling for async job")
+
+		resp := ee.client.LastOperation(ee.InstanceId)
+		if resp.InError() {
+			return false, resp.Error
+		}
+
+		if resp.StatusCode != 200 {
+			ee.logger.Printf("Bad status code %d, needed 200", resp.StatusCode)
+			return false, fmt.Errorf("broker responded with statuscode %v", resp.StatusCode)
+		}
+
+		var responseBody map[string]string
+		err := json.Unmarshal(resp.ResponseBody, &responseBody)
+		if err != nil {
+			return false, err
+		}
+
+		state := responseBody["state"]
+		eq := state == string(brokerapi.Succeeded)
+
+		if state == string(brokerapi.Failed) {
+			ee.logger.Printf("Last operation for %q was %q: %s\n", ee.InstanceId, state, responseBody["description"])
+			return false, fmt.Errorf(responseBody["description"])
+		}
+
+		ee.logger.Printf("Last operation for %q was %q\n", ee.InstanceId, state)
+		return !eq, nil
+	})
 }
 
 // Deprovision destroys the instance created by a call to Provision.
 func (ee *exampleExecutor) Deprovision() error {
-	log.Printf("Deprovisioning %s\n", ee.Name)
+	ee.logger.Printf("Deprovisioning %s\n", ee.Name)
 	resp := ee.client.Deprovision(ee.InstanceId, ee.ServiceId, ee.PlanId)
 
-	log.Println(resp.String())
+	ee.logger.Println(resp.String())
 	if resp.InError() {
 		return resp.Error
 	}
@@ -355,17 +372,17 @@ func (ee *exampleExecutor) Deprovision() error {
 	case 202:
 		return ee.pollUntilFinished()
 	default:
-		return fmt.Errorf("Unexpected response code %d", resp.StatusCode)
+		return fmt.Errorf("unexpected response code %d", resp.StatusCode)
 	}
 }
 
 // Unbind unbinds the exact binding created by a call to Bind.
 func (ee *exampleExecutor) Unbind() error {
 	return retry(15*time.Minute, 15*time.Second, func() (bool, error) {
-		log.Printf("Unbinding %s\n", ee.Name)
+		ee.logger.Printf("Unbinding %s\n", ee.Name)
 		resp := ee.client.Unbind(ee.InstanceId, ee.BindingId, ee.ServiceId, ee.PlanId)
 
-		log.Println(resp.String())
+		ee.logger.Println(resp.String())
 		if resp.InError() {
 			return false, resp.Error
 		}
@@ -374,7 +391,7 @@ func (ee *exampleExecutor) Unbind() error {
 			return false, nil
 		}
 
-		return false, fmt.Errorf("Unexpected response code %d", resp.StatusCode)
+		return false, fmt.Errorf("unexpected response code %d", resp.StatusCode)
 	})
 }
 
@@ -382,10 +399,10 @@ func (ee *exampleExecutor) Unbind() error {
 // once successfully as subsequent binds will attempt to create bindings with
 // the same ID.
 func (ee *exampleExecutor) Bind() (json.RawMessage, error) {
-	log.Printf("Binding %s\n", ee.Name)
+	ee.logger.Printf("Binding %s\n", ee.Name)
 	resp := ee.client.Bind(ee.InstanceId, ee.BindingId, ee.ServiceId, ee.PlanId, ee.BindParams)
 
-	log.Println(resp.String())
+	ee.logger.Println(resp.String())
 	if resp.InError() {
 		return nil, resp.Error
 	}
@@ -394,17 +411,17 @@ func (ee *exampleExecutor) Bind() (json.RawMessage, error) {
 		return resp.ResponseBody, nil
 	}
 
-	return nil, fmt.Errorf("Unexpected response code %d", resp.StatusCode)
+	return nil, fmt.Errorf("unexpected response code %d", resp.StatusCode)
 }
 
 // LogTestInfo writes information about the running example and a manual backout
 // strategy if the test dies part of the way through.
-func (ee *exampleExecutor) LogTestInfo() {
-	log.Printf("Running Example: %s\n", ee.Name)
+func (ee *exampleExecutor) LogTestInfo(logger *exampleLogger) {
+	logger.Printf("Running Example: %s\n", ee.Name)
 
 	ips := fmt.Sprintf("--instanceid %q --planid %q --serviceid %q", ee.InstanceId, ee.PlanId, ee.ServiceId)
-	log.Printf("cloud-service-broker client provision %s --params %q\n", ips, ee.ProvisionParams)
-	log.Printf("cloud-service-broker client bind %s --bindingid %q --params %q\n", ips, ee.BindingId, ee.BindParams)
-	log.Printf("cloud-service-broker client unbind %s --bindingid %q\n", ips, ee.BindingId)
-	log.Printf("cloud-service-broker client deprovision %s\n", ips)
+	logger.Printf("cloud-service-broker client provision %s --params %q\n", ips, ee.ProvisionParams)
+	logger.Printf("cloud-service-broker client bind %s --bindingid %q --params %q\n", ips, ee.BindingId, ee.BindParams)
+	logger.Printf("cloud-service-broker client unbind %s --bindingid %q\n", ips, ee.BindingId)
+	logger.Printf("cloud-service-broker client deprovision %s\n", ips)
 }

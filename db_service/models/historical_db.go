@@ -206,30 +206,7 @@ func (PlanDetailsV1) TableName() string {
 
 // TerraformDeploymentV1 describes the state of a Terraform resource deployment.
 type TerraformDeploymentV1 struct {
-	ID        string `gorm:"primary_key",sql:"type:varchar(1024)"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt *time.Time
-
-	// Workspace contains a JSON serialized version of the Terraform workspace.
-	Workspace string `sql:"type:mediumtext"`
-
-	// LastOperationType describes the last operation being performed on the resource.
-	LastOperationType string
-
-	// LastOperationState holds one of the following strings "in progress", "succeeded", "failed".
-	// These mirror the OSB API.
-	LastOperationState string
-
-	// LastOperationMessage is a description that can be passed back to the user.
-	LastOperationMessage string `sql:"type:text"`
-}
-
-// Expands the size of the Workspace column to handle deployments where the
-// Terraform workspace is greater than 64K. (mediumtext allows for workspaces up
-// to 16384K.)
-type TerraformDeploymentV2 struct {
-	ID        string `gorm:"primary_key",sql:"type:varchar(1024)"`
+	ID        string `gorm:"primary_key" sql:"type:varchar(1024)"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt *time.Time
@@ -252,5 +229,35 @@ type TerraformDeploymentV2 struct {
 // multiple structs from different versions of the database all operate on the
 // same table.
 func (TerraformDeploymentV1) TableName() string {
+	return "terraform_deployments"
+}
+
+// TerraformDeploymentV2 expands the size of the Workspace column to handle deployments where the
+// Terraform workspace is greater than 64K. (mediumtext allows for workspaces up
+// to 16384K.)
+type TerraformDeploymentV2 struct {
+	ID        string `gorm:"primary_key" sql:"type:varchar(1024)"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time
+
+	// Workspace contains a JSON serialized version of the Terraform workspace.
+	Workspace string `sql:"type:mediumtext"`
+
+	// LastOperationType describes the last operation being performed on the resource.
+	LastOperationType string
+
+	// LastOperationState holds one of the following strings "in progress", "succeeded", "failed".
+	// These mirror the OSB API.
+	LastOperationState string
+
+	// LastOperationMessage is a description that can be passed back to the user.
+	LastOperationMessage string `sql:"type:text"`
+}
+
+// TableName returns a consistent table name (`provision_request_details`) for
+// gorm so multiple structs from different versions of the database all operate
+// on the same table.
+func (TerraformDeploymentV2) TableName() string {
 	return "terraform_deployments"
 }

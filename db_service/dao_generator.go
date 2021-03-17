@@ -30,9 +30,10 @@ import (
 func main() {
 	models := []crudModel{
 		{
-			Type:            "ServiceInstanceDetails",
-			PrimaryKeyType:  "string",
-			PrimaryKeyField: "id",
+			Type:              "ServiceInstanceDetails",
+			PrimaryKeyType:    "string",
+			PrimaryKeyExample: `"42"`,
+			PrimaryKeyField:   "id",
 			ExampleFields: map[string]interface{}{
 				"Name":             "Hello",
 				"Location":         "loc",
@@ -45,9 +46,10 @@ func main() {
 			},
 		},
 		{
-			Type:            "ServiceBindingCredentials",
-			PrimaryKeyType:  "uint",
-			PrimaryKeyField: "id",
+			Type:              "ServiceBindingCredentials",
+			PrimaryKeyType:    "uint",
+			PrimaryKeyExample: `uint(42)`,
+			PrimaryKeyField:   "id",
 			Keys: []fieldList{
 				{
 					{Type: "string", Column: "service_instance_id"},
@@ -65,19 +67,21 @@ func main() {
 			},
 		},
 		{
-			Type:            "ProvisionRequestDetails",
-			PrimaryKeyType:  "uint",
-			PrimaryKeyField: "id",
+			Type:              "ProvisionRequestDetails",
+			PrimaryKeyType:    "uint",
+			PrimaryKeyExample: `uint(42)`,
+			PrimaryKeyField:   "id",
 			ExampleFields: map[string]interface{}{
 				"ServiceInstanceId": "2222-2222-2222",
 				"RequestDetails":    `{"some":["json","blob","here"]}`,
 			},
 		},
 		{
-			Type:            "TerraformDeployment",
-			PrimaryKeyType:  "string",
-			PrimaryKeyField: "id",
-			Keys:            []fieldList{},
+			Type:              "TerraformDeployment",
+			PrimaryKeyType:    "string",
+			PrimaryKeyExample: `"42"`,
+			PrimaryKeyField:   "id",
+			Keys:              []fieldList{},
 			ExampleFields: map[string]interface{}{
 				"Workspace":            "{}",
 				"LastOperationType":    "create",
@@ -97,7 +101,9 @@ func main() {
 }
 
 func createDao(models []crudModel) {
-	f, err := os.Create("dao.go")
+	const name = "dao.go"
+	fmt.Printf("Writing to `%s`\n", name)
+	f, err := os.Create(name)
 	die(err)
 	defer f.Close()
 
@@ -111,7 +117,9 @@ func createDao(models []crudModel) {
 }
 
 func createDaoTest(models []crudModel) {
-	f, err := os.Create("dao_test.go")
+	const name = "dao_test.go"
+	fmt.Printf("Writing to `%s`\n", name)
+	f, err := os.Create(name)
 	die(err)
 	defer f.Close()
 
@@ -131,11 +139,12 @@ func die(err error) {
 }
 
 type crudModel struct {
-	Type            string
-	PrimaryKeyType  string
-	PrimaryKeyField string
-	ExampleFields   map[string]interface{}
-	Keys            []fieldList
+	Type              string
+	PrimaryKeyType    string
+	PrimaryKeyField   string
+	PrimaryKeyExample string
+	ExampleFields     map[string]interface{}
+	Keys              []fieldList
 }
 
 type fieldList []crudField
@@ -301,9 +310,7 @@ func {{$fn}}(ctx context.Context, {{ $key.Args }}) error { return defaultDatasto
 func (ds *SqlDatastore) {{$fn}}(ctx context.Context, {{ $key.Args }}) error {
 	return ds.db.{{ $key.WhereClause }}.Delete(&models.{{$type}}{}).Error
 }
-
 {{ end }}
-
 // Delete{{.Type}} soft-deletes the record.
 func {{funcName "Delete" .Type}}(ctx context.Context, record *models.{{.Type}}) error { return defaultDatastore().{{funcName "Delete" .Type}}(ctx, record) }
 func (ds *SqlDatastore) {{funcName "Delete" .Type}}(ctx context.Context, record *models.{{.Type}}) error {
@@ -395,7 +402,7 @@ func newInMemoryDatastore(t *testing.T) *SqlDatastore {
 {{- range .Models}}
 
 func create{{.Type}}Instance() ({{.PrimaryKeyType}}, models.{{.Type}}) {
-	testPk := {{.PrimaryKeyType}}(42)
+	testPk := {{.PrimaryKeyExample}}
 
 	instance := models.{{.Type}}{}
 	instance.ID = testPk

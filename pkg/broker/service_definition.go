@@ -26,7 +26,7 @@ import (
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/validation"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/pkg/varcontext"
 	"github.com/cloudfoundry-incubator/cloud-service-broker/utils"
-	"github.com/pivotal-cf/brokerapi"
+	"github.com/pivotal-cf/brokerapi/v7"
 	"github.com/spf13/viper"
 )
 
@@ -69,45 +69,45 @@ type ServiceDefinition struct {
 var _ validation.Validatable = (*ServiceDefinition)(nil)
 
 // Validate implements validation.Validatable.
-func (sd *ServiceDefinition) Validate() (errs *validation.FieldError) {
+func (svc *ServiceDefinition) Validate() (errs *validation.FieldError) {
 	errs = errs.Also(
-		validation.ErrIfNotUUID(sd.Id, "Id"),
-		validation.ErrIfNotOSBName(sd.Name, "Name"),
+		validation.ErrIfNotUUID(svc.Id, "Id"),
+		validation.ErrIfNotOSBName(svc.Name, "Name"),
 	)
 
-	if sd.ImageUrl != "" {
-		errs = errs.Also(validation.ErrIfNotURL(sd.ImageUrl, "ImageUrl"))
+	if svc.ImageUrl != "" {
+		errs = errs.Also(validation.ErrIfNotURL(svc.ImageUrl, "ImageUrl"))
 	}
 
-	if sd.DocumentationUrl != "" {
-		errs = errs.Also(validation.ErrIfNotURL(sd.DocumentationUrl, "DocumentationUrl"))
+	if svc.DocumentationUrl != "" {
+		errs = errs.Also(validation.ErrIfNotURL(svc.DocumentationUrl, "DocumentationUrl"))
 	}
 
-	if sd.SupportUrl != "" {
-		errs = errs.Also(validation.ErrIfNotURL(sd.SupportUrl, "SupportUrl"))
+	if svc.SupportUrl != "" {
+		errs = errs.Also(validation.ErrIfNotURL(svc.SupportUrl, "SupportUrl"))
 	}
 
-	for i, v := range sd.ProvisionInputVariables {
+	for i, v := range svc.ProvisionInputVariables {
 		errs = errs.Also(v.Validate().ViaFieldIndex("ProvisionInputVariables", i))
 	}
 
-	for i, v := range sd.ProvisionComputedVariables {
+	for i, v := range svc.ProvisionComputedVariables {
 		errs = errs.Also(v.Validate().ViaFieldIndex("ProvisionComputedVariables", i))
 	}
 
-	for i, v := range sd.BindInputVariables {
+	for i, v := range svc.BindInputVariables {
 		errs = errs.Also(v.Validate().ViaFieldIndex("BindInputVariables", i))
 	}
 
-	for i, v := range sd.BindOutputVariables {
+	for i, v := range svc.BindOutputVariables {
 		errs = errs.Also(v.Validate().ViaFieldIndex("BindOutputVariables", i))
 	}
 
-	for i, v := range sd.BindComputedVariables {
+	for i, v := range svc.BindComputedVariables {
 		errs = errs.Also(v.Validate().ViaFieldIndex("BindComputedVariables", i))
 	}
 
-	for i, v := range sd.PlanVariables {
+	for i, v := range svc.PlanVariables {
 		errs = errs.Also(v.Validate().ViaFieldIndex("PlanVariables", i))
 	}
 
@@ -141,7 +141,7 @@ func unmarshalViper(key string) (map[string]interface{}, error) {
 	if viper.IsSet(key) {
 		val := viper.GetString(key)
 		if err := json.Unmarshal([]byte(val), &vals); err != nil {
-			return nil, fmt.Errorf("Failed unmarshaling config value %s", key)
+			return nil, fmt.Errorf("failed unmarshaling config value %s", key)
 		}
 	}
 	return vals, nil
@@ -204,7 +204,7 @@ func (svc *ServiceDefinition) CatalogEntry() (*Service, error) {
 	}
 
 	if enableCatalogSchemas.IsActive() {
-		for i, _ := range sd.Plans {
+		for i := range sd.Plans {
 			sd.Plans[i].Schemas = svc.createSchemas()
 		}
 	}
@@ -242,7 +242,7 @@ func (svc *ServiceDefinition) GetPlanById(planId string) (*ServicePlan, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Plan ID %q could not be found", planId)
+	return nil, fmt.Errorf("plan ID %q could not be found", planId)
 }
 
 // UserDefinedPlans extracts user defined plans from the environment, failing if
@@ -358,20 +358,20 @@ func (svc *ServiceDefinition) bindDefaults() []varcontext.DefaultVariable {
 // 4. User defined variables (in `update_input_variables`)
 // 5. User defined variables (in `provision_input_variables` or `bind_input_variables`)
 // 6. Operator default variables loaded from the environment.
-// 7. Global operator default variables loaded from the environemnt.
+// 7. Global operator default variables loaded from the environment.
 // 8. Default variables (in `provision_input_variables` or `bind_input_variables`).
 //
 // Loading into the map occurs slightly differently.
 // Default variables and computed_variables get executed by interpolation.
-// User defined varaibles are not to prevent side-channel attacks.
+// User defined variables are not to prevent side-channel attacks.
 // Default variables may reference user provided variables.
 // For example, to create a default database name based on a user-provided instance name.
 // Therefore, they get executed conditionally if a user-provided variable does not exist.
 // Computed variables get executed either unconditionally or conditionally for greater flexibility.
-func (svc *ServiceDefinition) variables( constants map[string]interface{}, 
-										 rawProvisionParameters json.RawMessage, 
-										 rawUpdateParameters json.RawMessage,
-										 plan ServicePlan) (*varcontext.VarContext, error) {
+func (svc *ServiceDefinition) variables(constants map[string]interface{},
+	rawProvisionParameters json.RawMessage,
+	rawUpdateParameters json.RawMessage,
+	plan ServicePlan) (*varcontext.VarContext, error) {
 	// The namespaces of these values roughly align with the OSB spec.
 	// constants := map[string]interface{}{
 	// 	"request.plan_id":        details.PlanID,
@@ -402,25 +402,36 @@ func (svc *ServiceDefinition) variables( constants map[string]interface{},
 	return buildAndValidate(builder, svc.ProvisionInputVariables)
 }
 
-func (svc *ServiceDefinition) ProvisionVariables(instanceId string, details brokerapi.ProvisionDetails, plan ServicePlan) (*varcontext.VarContext, error) {
+func (svc *ServiceDefinition) ProvisionVariables(instanceId string, details brokerapi.ProvisionDetails, plan ServicePlan, originatingIdentity map[string]interface{}) (*varcontext.VarContext, error) {
 	// The namespaces of these values roughly align with the OSB spec.
 	constants := map[string]interface{}{
-		"request.plan_id":        details.PlanID,
-		"request.service_id":     details.ServiceID,
-		"request.instance_id":    instanceId,
-		"request.default_labels": utils.ExtractDefaultProvisionLabels(instanceId, details),
+		"request.plan_id":                           details.PlanID,
+		"request.service_id":                        details.ServiceID,
+		"request.instance_id":                       instanceId,
+		"request.default_labels":                    utils.ExtractDefaultProvisionLabels(instanceId, details),
+		"request.context":                           unmarshalJsonToMap(details.GetRawContext()),
+		"request.x_broker_api_originating_identity": originatingIdentity,
 	}
+
 	return svc.variables(constants, details.GetRawParameters(), json.RawMessage("{}"), plan)
 }
 
-func (svc *ServiceDefinition) 	UpdateVariables(instanceId string, details brokerapi.UpdateDetails, provisionDetails json.RawMessage, plan ServicePlan) (*varcontext.VarContext, error) {
+func (svc *ServiceDefinition) UpdateVariables(instanceId string, details brokerapi.UpdateDetails, provisionDetails json.RawMessage, plan ServicePlan, originatingIdentity map[string]interface{}) (*varcontext.VarContext, error) {
 	constants := map[string]interface{}{
-		"request.plan_id":        details.PlanID,
-		"request.service_id":     details.ServiceID,
-		"request.instance_id":    instanceId,
-		"request.default_labels": utils.ExtractDefaultUpdateLabels(instanceId, details),
+		"request.plan_id":                           details.PlanID,
+		"request.service_id":                        details.ServiceID,
+		"request.instance_id":                       instanceId,
+		"request.default_labels":                    utils.ExtractDefaultUpdateLabels(instanceId, details),
+		"request.context":                           unmarshalJsonToMap(details.GetRawContext()),
+		"request.x_broker_api_originating_identity": originatingIdentity,
 	}
 	return svc.variables(constants, provisionDetails, details.GetRawParameters(), plan)
+}
+
+func unmarshalJsonToMap(rawContext json.RawMessage) map[string]interface{} {
+	rawContextMap := map[string]interface{}{}
+	json.Unmarshal(rawContext, &rawContextMap)
+	return rawContextMap
 }
 
 // BindVariables gets the variable resolution context for a bind request.
@@ -433,7 +444,7 @@ func (svc *ServiceDefinition) 	UpdateVariables(instanceId string, details broker
 // 4. Operator default variables loaded from the environment.
 // 5. Default variables (in `bind_input_variables`).
 //
-func (svc *ServiceDefinition) BindVariables(instance models.ServiceInstanceDetails, bindingID string, details brokerapi.BindDetails, plan *ServicePlan) (*varcontext.VarContext, error) {
+func (svc *ServiceDefinition) BindVariables(instance models.ServiceInstanceDetails, bindingID string, details brokerapi.BindDetails, plan *ServicePlan, originatingIdentity map[string]interface{}) (*varcontext.VarContext, error) {
 	otherDetails := make(map[string]interface{})
 	if err := instance.GetOtherDetails(&otherDetails); err != nil {
 		return nil, err
@@ -446,9 +457,12 @@ func (svc *ServiceDefinition) BindVariables(instance models.ServiceInstanceDetai
 
 	// The namespaces of these values roughly align with the OSB spec.
 	constants := map[string]interface{}{
+		"request.x_broker_api_originating_identity": originatingIdentity,
+
 		// specified in the URL
 		"request.binding_id":  bindingID,
 		"request.instance_id": instance.ID,
+		"request.context":     unmarshalJsonToMap(details.GetRawContext()),
 
 		// specified in the request body
 		// Note: the value in instance is considered the official record so values
@@ -504,7 +518,7 @@ func (svc *ServiceDefinition) AllowedUpdate(details brokerapi.UpdateDetails) (bo
 		if param.ProhibitUpdate {
 			if _, ok := out[param.FieldName]; ok {
 				return false, nil
-			} 
+			}
 		}
 	}
 	return true, nil

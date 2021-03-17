@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"code.cloudfoundry.org/lager"
-	"github.com/pivotal-cf/brokerapi"
+	"github.com/pivotal-cf/brokerapi/v7"
 	"github.com/spf13/viper"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
@@ -51,7 +51,7 @@ func GetAuthedConfig() (*jwt.Config, error) {
 	rootCreds := GetServiceAccountJson()
 	conf, err := google.JWTConfigFromJSON([]byte(rootCreds), cloudPlatformScope)
 	if err != nil {
-		return nil, fmt.Errorf("Error initializing config from credentials: %s", err)
+		return nil, fmt.Errorf("error initializing config from credentials: %s", err)
 	}
 	return conf, nil
 }
@@ -118,7 +118,7 @@ func SetParameter(input json.RawMessage, key string, value interface{}) (json.Ra
 	return json.Marshal(params)
 }
 
-// UnmarshalObjectRemaidner unmarshals an object into v and returns the
+// UnmarshalObjectRemainder unmarshals an object into v and returns the
 // remaining key/value pairs as a JSON string by doing a set difference.
 func UnmarshalObjectRemainder(data []byte, v interface{}) ([]byte, error) {
 	if err := json.Unmarshal(data, v); err != nil {
@@ -154,7 +154,7 @@ func jsonDiff(superset, subset json.RawMessage) ([]byte, error) {
 	return json.Marshal(remainder)
 }
 
-// GetDefaultProject gets the default project id for the service broker based
+// GetDefaultProjectId gets the default project id for the service broker based
 // on the JSON Service Account key.
 func GetDefaultProjectId() (string, error) {
 	serviceAccount := make(map[string]string)
@@ -171,7 +171,7 @@ func GetServiceAccountJson() string {
 	return viper.GetString("google.account")
 }
 
-// ExtractDefaultLabels creates a map[string]string of labels that should be
+// ExtractDefaultProvisionLabels creates a map[string]string of labels that should be
 // applied to a resource on creation if the resource supports labels.
 // These include the organization, space, and instance id.
 func ExtractDefaultProvisionLabels(instanceId string, details brokerapi.ProvisionDetails) map[string]string {
@@ -231,10 +231,10 @@ func NewLogger(name string) lager.Logger {
 	logger := lager.NewLogger(name)
 
 	logLevel := lager.INFO
-    if _, debug := os.LookupEnv("GSB_DEBUG"); debug {
-        logLevel = lager.DEBUG
+	if _, debug := os.LookupEnv("GSB_DEBUG"); debug {
+		logLevel = lager.DEBUG
 	}
-		
+
 	logger.RegisterSink(lager.NewWriterSink(os.Stderr, lager.ERROR))
 	logger.RegisterSink(lager.NewWriterSink(os.Stdout, logLevel))
 

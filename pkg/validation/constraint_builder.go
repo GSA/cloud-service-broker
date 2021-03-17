@@ -39,14 +39,14 @@ const (
 	KeyProhibitUpdate   = "prohibitUpdate"
 )
 
-//  NewConstraintBuilder creates a builder for JSON Schema compliant constraint
+// NewConstraintBuilder creates a builder for JSON Schema compliant constraint
 // lists. See http://json-schema.org/latest/json-schema-validation.html
 // for types of validation available.
 func NewConstraintBuilder() ConstraintBuilder {
 	return ConstraintBuilder{}
 }
 
-// A builder for JSON Schema compliant constraint lists
+// ConstraintBuilder - A builder for JSON Schema compliant constraint lists
 type ConstraintBuilder map[string]interface{}
 
 // Type adds a type constrinat.
@@ -162,7 +162,7 @@ func (cb ConstraintBuilder) MinItems(value int) ConstraintBuilder {
 	return cb
 }
 
-// KeyMaxProperties adds a constraint that the object must have at most this many keys.
+// MaxProperties adds a constraint that the object must have at most this many keys.
 func (cb ConstraintBuilder) MaxProperties(value int) ConstraintBuilder {
 	cb[KeyMaxProperties] = value
 

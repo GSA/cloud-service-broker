@@ -15,7 +15,6 @@
 package wrapper
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -47,7 +46,7 @@ func TestTerraformWorkspace_Invariants(t *testing.T) {
 		}},
 		"show": {Exec: func(ws *TerraformWorkspace) {
 			ws.Show()
-		}},	}
+		}}}
 
 	for tn, tc := range cases {
 		t.Run(tn, func(t *testing.T) {
@@ -132,7 +131,7 @@ func TestTerraformWorkspace_InvariantsFlat(t *testing.T) {
 		}},
 		"show": {Exec: func(ws *TerraformWorkspace) {
 			ws.Show()
-		}},	}
+		}}}
 
 	for tn, tc := range cases {
 		t.Run(tn, func(t *testing.T) {
@@ -226,7 +225,7 @@ func TestCustomTerraformExecutor(t *testing.T) {
 		"show": {
 			Input:    exec.Command("terraform", "show", "-no-color"),
 			Expected: exec.Command(customBinary, "show", "-no-color"),
-		},		
+		},
 	}
 
 	for tn, tc := range cases {
@@ -271,6 +270,6 @@ func TestCustomEnvironmentExecutor(t *testing.T) {
 	expected := []string{"ORIGINAL=value", "FOO=bar"}
 
 	if !reflect.DeepEqual(expected, actual.Env) {
-		fmt.Errorf("Expected %v actual %v", expected, actual)
+		t.Fatalf("Expected %v actual %v", expected, actual)
 	}
 }
