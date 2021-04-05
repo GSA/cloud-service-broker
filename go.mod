@@ -20,7 +20,7 @@ require (
 	github.com/jinzhu/now v1.1.1 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lib/pq v1.3.0 // indirect
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.4.1
 	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
 	github.com/onsi/ginkgo v1.15.1
 	github.com/onsi/gomega v1.11.0
@@ -37,7 +37,7 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v0.0.0-20180816142147-da425ebb7609
 	github.com/zclconf/go-cty v1.2.1 // indirect
-	golang.org/x/net v0.0.0-20210119194325-5f4716e94777
+	golang.org/x/net v0.0.0-20210331212208-0fccb6fa2b5c
 	golang.org/x/oauth2 v0.0.0-20210220000619-9bb904979d93
 	golang.org/x/tools v0.1.0
 	google.golang.org/api v0.41.0
