@@ -1,1 +1,0 @@
-variable user-input-provision { type = string }
