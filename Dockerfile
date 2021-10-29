@@ -1,9 +1,21 @@
 
+# Modified from upstream, 
+# https://github.com/cloudfoundry-incubator/cloud-service-broker/blob/main/Dockerfile
+FROM golang:1.17-alpine AS build
+RUN apk update
+RUN apk upgrade
+RUN apk add --update gcc g++
+WORKDIR /app
+
+ADD https://github.com/cloudfoundry-incubator/cloud-service-broker/archive/refs/tags/0.4.0.tar.gz /app/source.tar.gz
+RUN tar -xvf source.tar.gz && \
+  cd cloud-service-broker-0.4.0 && \
+  CGO_ENABLED=1 GOOS=linux go build -o ./build/cloud-service-broker
+
+
 FROM alpine/k8s:1.18.2
 
-ADD https://github.com/cloudfoundry-incubator/cloud-service-broker/releases/download/0.4.0/cloud-service-broker.darwin /bin/cloud-service-broker
-
-RUN chmod 755 /bin/cloud-service-broker
+COPY --from=build /app/cloud-service-broker-0.4.0/build/cloud-service-broker /bin/cloud-service-broker
 
 # Install git so we can use it to grab Terraform modules
 RUN apk add --update git
