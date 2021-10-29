@@ -14,8 +14,8 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: ghcr.io/gsa/cloud-service-broker
+          # type=ref,event=tag # This doesn't work so far..
           tags: |
-            type=ref,event=tag # This doesn't work so far..
             type=ref,event=branch
       - name: login to ghcr
         uses: docker/login-action@v1
