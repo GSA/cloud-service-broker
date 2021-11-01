@@ -1,6 +1,6 @@
 # GSA Cloud Service Broker
 
-This is a unique cloud service broker built on the CloudFoundry [cloud service broker](https://github.com/cloudfoundry-incubator/cloud-service-broker) and includes utilities specific to data.gov deployments.  For contextual information, please see their documentation.
+This repository is used to build a Docker image that includes the Cloud Foundry [cloud service broker](https://github.com/cloudfoundry-incubator/cloud-service-broker) and utilities needed for operating data.gov brokerpaks.  For contextual information, please see each brokerpak documentation.
 
 ## Contributing
 
