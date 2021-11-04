@@ -1,4 +1,4 @@
-FROM cfplatformeng/csb:0.4.0 as upstream
+FROM cfplatformeng/csb:0.4.1 as upstream
 
 FROM alpine/k8s:1.20.7
 
