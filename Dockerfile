@@ -7,7 +7,7 @@ COPY --from=upstream /bin/cloud-service-broker /bin/cloud-service-broker
 RUN apk update
 RUN apk upgrade
 # Install git so we can use it to grab Terraform modules
-RUN apk add --update git
+RUN apk add --update git zip
 
 # Enable re-templates of Terraform Code
 # Reference: https://github.com/GSA/data.gov/issues/3083
