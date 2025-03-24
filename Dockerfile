@@ -9,6 +9,7 @@ RUN wget --no-verbose \
 FROM alpine/k8s:1.20.7
 
 COPY --from=upstream /bin/cloud-service-broker /bin/cloud-service-broker
+RUN chmod a+x /bin/cloud-service-broker
 
 # Install git so we can use it to grab Terraform modules
 RUN apk update && apk upgrade && apk add --update git zip
